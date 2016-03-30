@@ -1,15 +1,26 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import os, sys, pickle, console, re
  
 sys.path += ['lib']
+
 import dropboxsetup
 
-# dropbox_sync
+# DropboxSync
 # by Michelle L. Gill, michelle@michellelynngill.com
 # requires my dropboxsetup module (https://gist.github.com/8311046)
 
 # Change log
 # 2013/01/07: initial version
 # 2013/01/09: added regex filtering
+
+# Forking
+
+# REVISION DATE : 28/03/2016
+# REVISION ARTIST : Başar Turgut
+# REVISION LAB : TRDLAB
+# REVISION VERSION : 1.0
 
 ##################################################################
 #                                                                #
@@ -38,6 +49,7 @@ debug_regex = False
 
 
 STATE_FILE = '.dropbox_state'
+ROOT = '/samba'
  
 class dropbox_state:
 	def __init__(self):
@@ -72,30 +84,29 @@ class dropbox_state:
 		self.cursor = delta['cursor']
 		
 		for entry in delta['entries']:
-			path = entry[0][1:]
+			path = entry[0]
 			meta = entry[1]
-			
+
 			# this skips the path if we just uploaded it
 			if path != ignore_path:
 				if meta != None:
-					path = meta['path'][1:] # caps sensitive
+					path = meta['path'] # caps sensitive
 					if meta['is_dir']:
-						print '\n\tMaking Directory:',path
 						self.makedir_local(path)
 					elif path not in self.remote_files:
-						print '\n\tNot in local'
+						print '\tFile not found in local'
 						self.download(client, path)
 					elif meta['rev'] != self.remote_files[path]['rev']:
-						print '\n\tOutdated revision'
+						print '\tOutdated revision'
 						self.download(client, path)
 				# remove file or directory
 				else: 
-					if os.path.isdir(path):
-						print '\n\tRemoving Directory:', path
-						os.removedirs(path)
-					elif os.path.isfile(path):
-						print '\n\tRemoving File:', path
-						os.remove(path)
+					if os.path.isdir(ROOT + path):
+						print '\tRemoving Directory:', ROOT + path
+						os.removedirs(ROOT + path)
+					elif os.path.isfile(ROOT + path):
+						print '\tRemoving File:', ROOT + path
+						os.remove(ROOT + path)
 						
 						del self.local_files[path]
 						del self.remote_files[path]
@@ -108,30 +119,36 @@ class dropbox_state:
 		# TODO: what if there is a folder there...?
 		head, tail = os.path.split(path)
 		# make the folder if it doesn't exist yet
-		if not os.path.exists(head) and head != '':
-			os.makedirs(head)
+		if not os.path.exists(ROOT + head) and head != '':
+			os.makedirs(ROOT + head)
 		#open file to write
-		local = open(path,'w')
-		remote, meta = client.get_file_and_metadata(os.path.join('/',path))
+		local = open(ROOT + path,'w')
+		remote, meta = client.get_file_and_metadata(path)
 		local.write(remote.read())
 		#clean up
 		remote.close()
 		local.close()
 		# add to local repository
-		self.local_files[path] = {'modified': os.path.getmtime(path)}
+		self.local_files[path] = {'modified': os.path.getmtime(ROOT + path)}
 		self.remote_files[path] = meta
 	
 	def upload(self, client, path):
 		print '\tUploading:', path
-		local = open(path,'r')
-		meta = client.put_file(os.path.join('/',path), local, True)
+
+		local = open(ROOT + path,'r')
+		try:
+			meta = client.put_file(path, local, True)
+		except:
+			print '\tUnwanted file : thumbs.db, etc.'
+			local.close()
+			return
 		local.close()
 		
-		self.local_files[path] = {'modified': os.path.getmtime(path)}
+		self.local_files[path] = {'modified': os.path.getmtime(ROOT + path)}
 		self.remote_files[path] = meta
 		
 		# clean out the delta for the file upload
-		self.execute_delta(client, ignore_path=meta['path'])
+		self.execute_delta(client, meta['path'].lower())
 	
 	def delete(self, client, path):
 		print '\tFile deleted locally. Deleting on Dropbox:',path
@@ -146,30 +163,33 @@ class dropbox_state:
 		
 	# safely makes local dir
 	def makedir_local(self,path):
-		if not os.path.exists(path): # no need to make a dir that exists
-			os.makedirs(path)
-		elif os.path.isfile(path): # if there is a file there ditch it
-			os.remove(path)
+		if not os.path.exists(ROOT + path): # no need to make a dir that exists
+			os.makedirs(ROOT + path)
+		elif os.path.isfile(ROOT + path): # if there is a file there ditch it
+			os.remove(ROOT + path)
 			del self.files[path]
 			
-			os.makedir(path)
+			os.makedir(ROOT + path)
  
 	# recursively list files on dropbox
-	def _listfiles(self, client, path = '/'):
-		meta = client.metadata(path)
-		filelist = []
+	#def _listfiles(self, client, path = '/'):
+	#	print 'Reading remote files from remote path : ' + path
+	#	meta = client.metadata(path)
+	#	filelist = []
 		
-		for item in meta['contents']:
-			if item['is_dir']:
-				filelist += self._listfiles(client,item['path'])
-			else:
-				filelist.append(item['path'])
-		return filelist
+	#	for item in meta['contents']:
+	#		if item['is_dir']:
+	#			print "(Remote)FLD : " + item['path'][1:]
+	#			filelist += self._listfiles(client,item['path'])
+	#		else:
+	#			print "(Remote)FL : " + item['path'][1:]
+	#			filelist.append(item['path'])
+	#	return filelist
 				
-	def download_all(self, client, path = '/'):
-		filelist = self._listfiles(client)
-		for file in filelist:
-			self.download(client, file[1:])	# trim root slash
+	#def download_all(self, client, path = '/'):
+	#	filelist = self._listfiles(client)
+	#	for file in filelist:
+	#		self.download(client, file)
 	
 	def check_state(self, client, path):
 		# lets see if we've seen it before
@@ -182,11 +202,13 @@ class dropbox_state:
 		else:
 			pass # looks like everything is good
 			
-def loadstate():
-	fyle = open(STATE_FILE,'r')
-	state = pickle.load(fyle)
-	fyle.close()
-	
+def loadstate(stateFile):
+	print '\n\tState file : ' + stateFile
+
+	file = open(stateFile,'r')
+	state = pickle.load(file)
+	file.close()
+
 	return state
  
 def savestate(state):
@@ -195,57 +217,49 @@ def savestate(state):
 	fyle.close()
 	
 if __name__ == '__main__':
-	console.show_activity()
 	
 	print """
 ****************************************
 *     Dropbox File Syncronization      *
 ****************************************"""
 	
-	print '\nLoading local state'
+	print '\nLoading local state...'
 	# lets see if we can unpickle
 	try:
-		state = loadstate()
+		state = loadstate(ROOT + '/' + STATEFILE)
 		_, client = dropboxsetup.init(state.get_token_filename(), state.get_app_key(), state.get_app_secret())
+		print '\tLoaded successfuly!'
 	except:
-		print '\nCannot find state file. ***Making new local state***\n'
+		print '\tCannot find state file! ***Making new local state***'
 		# Aaaah, we have nothing, probably first run
 		state = dropbox_state()
 
-		print("We need a few setup details.\n")
-		print("What do you want to call the Dropbox token file?")
-		temp_input=raw_input()
+		temp_input= ROOT + '/.dropboxToken'
 		state.set_token_file_name(temp_input)
-		print("What's your Dropbox app key?")
-		temp_input=raw_input()
+		temp_input=''
 		state.set_app_key(temp_input)		
-		print("What's your Dropbox app secret?")
-		temp_input=raw_input()
+		temp_input=''
 		state.set_app_secret(temp_input)
-		print("Cool. We're ready to proceed.\n\n")
-	
+		
 		_, client = dropboxsetup.init(state.get_token_file_name(), state.get_app_key(), state.get_app_secret())
-		
-		print '\nDownloading everything from Dropbox'
-		# no way to check what we have locally is newer, gratuitous dl
-		state.download_all(client)
- 
-	print '\nUpdating state from Dropbox'
-	state.execute_delta(client)
-		
 	
-	print '\nChecking for new or updated local files'
+	print '\nFetching files from Dropbox...'	 
+	state.execute_delta(client)
+	
+	print '\tDone!'
+	
+	print '\nChecking for new or updated local files...'
 	# back to business, lets see if there is anything new or changed localy
-	dir_match=re.search(r'(/private/var/mobile/Applications/[0-9A-Z\\-]+/Documents)/.*', os.getcwd())
-	pythonista_root=dir_match.group(1)
-
+	print '\tBuilding file list...'	
 	filelist = []
 	
-	for root, dirnames, filenames in os.walk(pythonista_root):
+	for root, dirnames, filenames in os.walk(ROOT):
 		for filename in filenames:
 			if filename != STATE_FILE:
-				filelist.append( os.path.join(root, filename))
+#				print '\t\tNew Local File : ' + os.path.join(root, filename)
+				filelist.append(os.path.join(root, filename)[len(ROOT):])
 	
+	print '\tBuilding File List Done!'
 	####### REGEX FILTERS NOT FULLY TESTED YET #######
 	filelist = set(filelist)
 	if debug_regex:
@@ -277,23 +291,24 @@ if __name__ == '__main__':
 		print incfiles_filt
 		print '\nThe following files were then removed from sync list because they matched exclude filters:\n'
 		print excfiles_filt
-		print '\n The following files remain in the sync list after filtering:\n'
+		print '\nThe following files remain in the sync list after filtering:\n'
 		print filelist
 		
 	else:
-		filelist = list(filelist)
-
+		print '\nStatus check for local files...'
 		for file in filelist:
 			state.check_state(client,file)
+		print '\tStatus Check Done!'
 		
-		print '\nChecking for deleted local files'
+		print '\nChecking for deleted local files...'
 		old_list = state.local_files.keys()
 		for file in old_list:
 			if file not in filelist:
 				state.delete(client, file)
+	
+	print '\nSaving local state...'
+
+	savestate(state)
 		
-		print '\nSaving local state'
-		savestate(state)
-		
-		print '\nSync complete'
+	print '\tSync complete!'
 	

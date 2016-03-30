@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*- 
+
 import dropbox, os, webbrowser
 
 # A generic Dropbox module to create a token and login.
@@ -10,6 +13,13 @@ import dropbox, os, webbrowser
 
 # requires a dropbox app key and secret, which can be created on dropbox's developer website
 # most of this script was shamelessly copied from https://gist.github.com/ctaloi/4156185
+
+# FORKING POINT
+
+# REVISION DATE : 28 / 03 / 2016
+# REVISION ARTIST : Başar Turgut
+# REVISION LAB : TRDLAB
+# REVISION VERSION : 1.0
  
 def configure_token(sess, TOKEN_FILENAME):
 	
@@ -44,16 +54,10 @@ def first_access(sess, TOKEN_FILENAME):
 	return
 
 
-def init(TOKEN_FILENAME, APP_KEY, APP_SECRET, ACCESS_TYPE='app_folder'):
+def init(TOKEN_FILENAME, APP_KEY, APP_SECRET, ACCESS_TYPE='dropbox'):
 	# create the Dropbox session and client for file interaction
 	sess = dropbox.session.DropboxSession(APP_KEY, APP_SECRET, ACCESS_TYPE)
 	configure_token(sess, TOKEN_FILENAME)
 	client = dropbox.client.DropboxClient(sess)
 	
 	return sess, client
-
-if __name__ == "__main__":
-	token_filename = raw_input('Enter token filename:').strip()
-	app_key = raw_input('Enter app key:').strip()
-	app_secret = raw_input('Enter app secret:').strip()
-	sess, client = init(token_filename, app_key, app_secret)
